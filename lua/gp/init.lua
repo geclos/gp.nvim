@@ -2639,13 +2639,12 @@ M.Prompt = function(params, target, prompt, model, template, system_template, wh
 			local start = fl
 			local finish = ll
 
-			if target == M.Target.append then
-				start = M._selection_first_line - 1
-			end
-
-			if target == M.Target.prepend then
-				finish = M._selection_last_line + ll - fl
-			end
+      if target == M.Target.append or target == M.Target.prepend then
+        local total_lines = vim.api.nvim_buf_line_count(0)
+        -- For append and prepend, cover the entire file
+        start = 0
+        finish = total_lines
+      end
 
 			-- select from first_line to last_line
 			vim.api.nvim_win_set_cursor(0, { start + 1, 0 })
