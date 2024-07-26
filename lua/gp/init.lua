@@ -811,6 +811,7 @@ M.new_chat = function(params, toggle, system_prompt, agent)
 		M.render.append_selection(params, cbuf, buf, M.config.template_selection)
 	end
 	M.helpers.feedkeys("G", "xn")
+
 	return buf
 end
 
@@ -839,6 +840,7 @@ end
 ---@param system_prompt string | nil
 ---@param agent table | nil # obtained from get_command_agent or get_chat_agent
 M.cmd.ChatToggle = function(params, system_prompt, agent)
+	print(">> ChatToggle")
 	if M._toggle_close(M._toggle_kind.popup) then
 		return
 	end
@@ -853,16 +855,23 @@ M.cmd.ChatToggle = function(params, system_prompt, agent)
 	end
 
 	-- if the range is 2, we want to create a new chat file with the selection
+	local buf
 	if params.range ~= 2 then
 		local last = M._state.last_chat
 		if last and vim.fn.filereadable(last) == 1 then
 			last = vim.fn.resolve(last)
-			M.open_buf(last, M.resolve_buf_target(params), M._toggle_kind.chat, true)
-			return
+			buf = M.open_buf(last, M.resolve_buf_target(params), M._toggle_kind.chat, true)
 		end
+	else
+		buf = M.new_chat(params, true, system_prompt, agent)
 	end
 
-	M.new_chat(params, true, system_prompt, agent)
+	-- Tell nvim-cmp to use our completion source for the new buffer
+	-- print("In ChatToggle, trying to setup per buffer completion source")
+	-- local completion = require("gp.completion")
+	-- completion.setup_for_buffer(buf)
+
+	return buf
 end
 
 M.cmd.ChatPaste = function(params)
