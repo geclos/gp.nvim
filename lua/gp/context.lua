@@ -1,5 +1,5 @@
 local u = require("gp.utils")
-local gp = require("gp")
+local r = require("gp.render")
 local M = {}
 
 -- Split a context insertion command into its component parts
@@ -17,50 +17,64 @@ local function read_file(filepath)
 	return content
 end
 
--- Given a single message, parse out all the context insertion
--- commands, then return a new message with all the requested
--- context inserted
-function M.insert_contexts(msg)
-	local context_texts = {}
+-- Parse out all context insertion commands
+local function get_commands(msg, cmds, import)
+	import = import or false
 
-	-- Parse out all context insertion commands
-	local cmds = {}
-	for cmd in msg:gmatch("@file:[%w%p]+") do
+	for cmd in msg:gmatch("@code:[%w%p]+") do
 		table.insert(cmds, cmd)
 	end
 
-	-- Process each command and turn it into a string be
-	-- inserted as additional context
+	for cmd in msg:gmatch("@text:[%w%p]+") do
+		table.insert(cmds, cmd)
+	end
+
+	if not import then
+		for cmd in msg:gmatch("@import:[%w%p]+") do
+			table.insert(cmds, cmd)
+		end
+	end
+end
+
+local function recursive_import(msg, texts)
+	local cmds = {}
+	get_commands(msg, cmds)
+
 	for _, cmd in ipairs(cmds) do
-		local cmd_parts = M.cmd_split(cmd)
+		local parts = M.cmd_split(cmd)
 
-		if cmd_parts[1] == "@file" then
-			-- Read the reqested file and produce a msg snippet to be joined later
-			local filepath = cmd_parts[2]
-
-			local cwd = vim.fn.getcwd()
-			local fullpath = u.path_join(cwd, filepath)
-
-			local content = read_file(fullpath)
-			if content then
-				local result = gp._H.template_render("filepath\n```content```", {
-					filepath = filepath,
-					content = content,
-				})
-				table.insert(context_texts, result)
+		local cwd = vim.fn.getcwd()
+		local fullpath = u.path_join(cwd, parts[2])
+		local content = read_file(fullpath)
+		if content then
+			if parts[1] == "@import" then
+				local recursive_texts = {}
+				recursive_import(content, recursive_texts)
+				table.insert(texts, table.concat(recursive_texts, "\n\n\n\n"))
+			elseif parts[1] == "@code" then
+				table.insert(texts, string.format("```\n%s\n```", content))
+			else
+				table.insert(texts, content)
 			end
 		end
 	end
+end
 
-	-- If no context insertions are requested, don't alter the original msg
-	if #context_texts == 0 then
+function M.insert_contexts(msg)
+	local texts = {}
+
+	recursive_import(msg, texts)
+
+	local cmds = {}
+	get_commands(msg, cmds)
+	for _, cmd in ipairs(cmds) do
+		msg = msg:gsub(cmd, "", 1)
+	end
+
+	if #texts == 0 then
 		return msg
 	else
-		-- Otherwise, build and return the final message
-		return gp._H.template_render("context\n\nmsg", {
-			context = table.concat(context_texts, "\n"),
-			msg = msg,
-		})
+		return string.format("%s\n\n\n\n%s", table.concat(texts, "\n\n\n\n"), msg)
 	end
 end
 
