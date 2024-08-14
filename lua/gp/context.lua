@@ -21,16 +21,24 @@ end
 local function get_commands(msg, cmds, import)
 	import = import or false
 
-	for cmd in msg:gmatch("@code:[%w%p]+") do
+	for cmd in msg:gmatch("(@code:[%w%.%-/_ ]+)/") do
 		table.insert(cmds, cmd)
 	end
 
-	for cmd in msg:gmatch("@text:[%w%p]+") do
+	for cmd in msg:gmatch("(@text:[%w%.%-/_ ]+)/") do
+		table.insert(cmds, cmd)
+	end
+
+	for cmd in msg:gmatch("(@codedir:[%w%.%-/_ ]+)/") do
+		table.insert(cmds, cmd)
+	end
+
+	for cmd in msg:gmatch("(@textdir:[%w%.%-/_ ]+)/") do
 		table.insert(cmds, cmd)
 	end
 
 	if not import then
-		for cmd in msg:gmatch("@import:[%w%p]+") do
+		for cmd in msg:gmatch("(@import:[%w%.%-/_ ]+)/") do
 			table.insert(cmds, cmd)
 		end
 	end
@@ -44,17 +52,37 @@ local function recursive_import(msg, texts)
 		local parts = M.cmd_split(cmd)
 
 		local cwd = vim.fn.getcwd()
-		local fullpath = u.path_join(cwd, parts[2])
-		local content = read_file(fullpath)
-		if content then
-			if parts[1] == "@import" then
-				local recursive_texts = {}
-				recursive_import(content, recursive_texts)
-				table.insert(texts, table.concat(recursive_texts, "\n\n\n\n"))
-			elseif parts[1] == "@code" then
-				table.insert(texts, string.format("```\n%s\n```", content))
-			else
-				table.insert(texts, content)
+
+		local files = {}
+		if parts[1] == "@codedir" or parts[1] == "@textdir" then
+			local dirpath = u.path_join(cwd, parts[2])
+			for _, filename in pairs(vim.fn.readdir(dirpath)) do
+				local filepath = dirpath .. "/" .. filename
+				local rel_path = parts[2] .. "/" .. filename
+				if vim.fn.isdirectory(filepath) == 0 then
+					table.insert(files, {
+						cmd = parts[1]:sub(-5),
+						path = rel_path,
+					})
+				end
+			end
+		else
+			table.insert(files, { cmd = parts[1], path = parts[2] })
+		end
+
+		for _, file in ipairs(files) do
+			local fullpath = u.path_join(cwd, file.path)
+			local content = read_file(fullpath)
+			if content then
+				if file.cmd == "@import" then
+					local recursive_texts = {}
+					recursive_import(content, recursive_texts)
+					table.insert(texts, table.concat(recursive_texts, "\n\n\n\n"))
+				elseif file.cmd == "@code" then
+					table.insert(texts, string.format("%s\n```\n%s\n```", file.path, content))
+				else
+					table.insert(texts, content)
+				end
 			end
 		end
 	end
