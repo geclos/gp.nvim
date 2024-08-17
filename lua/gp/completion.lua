@@ -21,7 +21,7 @@ local source = {}
 source.src_name = "gp_completion"
 
 source.new = function()
-	print("source.new called")
+	-- print("source.new called")
 	return setmetatable({}, { __index = source })
 end
 
@@ -45,7 +45,7 @@ source.setup_for_buffer = function(bufnr)
 end
 
 source.setup_autocmd_for_markdown = function()
-	print("setting up autocmd...")
+	-- print("setting up autocmd...")
 	vim.api.nvim_create_autocmd("BufEnter", {
 		pattern = { "*.md", "markdown" },
 		callback = function(arg)
@@ -69,7 +69,7 @@ source.setup_autocmd_for_markdown = function()
 end
 
 source.register_cmd_source = function()
-	print("registering completion src")
+	-- print("registering completion src")
 	require("cmp").register_source(source.src_name, source.new())
 end
 
