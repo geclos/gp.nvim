@@ -81,61 +81,6 @@ local function extract_cmd(request)
 	end
 end
 
-local function completion_items_for_path(path)
-	local cmp = require("cmp")
-
-	-- The incoming path should either be
-	-- - A relative path that references a directory
-	-- - A relative path + partial filename as last component-
-	-- We need a bit of logic to figure out which directory content to return
-
-	--------------------------------------------------------------------
-	-- Figure out the full path of the directory we're trying to list --
-	--------------------------------------------------------------------
-	-- Split the path into component parts
-	local path_parts = u.path_split(path)
-	if path[#path] ~= "/" then
-		table.remove(path_parts)
-	end
-
-	-- Assuming the cwd is the project root directory...
-	local cwd = vim.fn.getcwd()
-	local target_dir = u.path_join(cwd, unpack(path_parts))
-
-	--------------------------------------------
-	-- List the items in the target directory --
-	--------------------------------------------
-	local handle = vim.loop.fs_scandir(target_dir)
-	local files = {}
-
-	if not handle then
-		return files
-	end
-
-	while true do
-		local name, type = vim.loop.fs_scandir_next(handle)
-		if not name then
-			break
-		end
-
-		local item_name, item_kind
-		if type == "file" then
-			item_kind = cmp.lsp.CompletionItemKind.File
-			item_name = name
-		elseif type == "directory" then
-			item_kind = cmp.lsp.CompletionItemKind.Folder
-			item_name = name .. "/"
-		end
-
-		table.insert(files, {
-			label = item_name,
-			kind = item_kind,
-		})
-	end
-
-	return files
-end
-
 source.complete = function(self, request, callback)
 	local input = string.sub(request.context.cursor_before_line, request.offset - 1)
 	print("[comp] input: '" .. input .. "'")
@@ -150,42 +95,57 @@ source.complete = function(self, request, callback)
 	local items = {}
 	local isIncomplete = true
 
-	if cmd_parts[1]:match("@file") then
-		-- What's the path we're trying to provide completion for?
-		local path = cmd_parts[2]
+	if cmd_parts[1]:match("@code") then
+		print("[complete] @code case")
+		-- List files in the current working directory
+		local cwd = vim.fn.getcwd()
+		local files = {}
 
-		-- List the items in the specified directory
-		items = completion_items_for_path(path)
-
-		-- Say that the entire list has been provided
-		-- cmp won't call us again to provide an updated list
-		isIncomplete = false
-	elseif input:match("^@code:") then
-		print("[complete] @code: case")
-		local parts = vim.split(input, ":", { plain = true })
-		if #parts == 1 then
-			items = {
-				{ label = "filename1.lua", kind = require("cmp").lsp.CompletionItemKind.File },
-				{ label = "filename2.lua", kind = require("cmp").lsp.CompletionItemKind.File },
-				{ label = "function1", kind = require("cmp").lsp.CompletionItemKind.Function },
-				{ label = "function2", kind = require("cmp").lsp.CompletionItemKind.Function },
-			}
-		elseif #parts == 2 then
-			items = {
-				{ label = "function1", kind = require("cmp").lsp.CompletionItemKind.Function },
-				{ label = "function2", kind = require("cmp").lsp.CompletionItemKind.Function },
-			}
+		local function scan_dir(dir)
+			local handle = vim.loop.fs_scandir(dir)
+			if handle then
+				while true do
+					local name, type = vim.loop.fs_scandir_next(handle)
+					if not name then break end
+					local full_path = dir .. '/' .. name
+					if type == "file" then
+						table.insert(files, full_path:sub(#cwd + 2)) -- Remove cwd prefix
+					elseif type == "directory" and not name:match("^%.") then
+						scan_dir(full_path)
+					end
+				end
+			end
 		end
+
+		scan_dir(cwd)
+
+		-- Sort files alphabetically
+		table.sort(files)
+
+		-- Limit the list to 10 items
+		local limited_files = {}
+		for i = 1, #files do
+			table.insert(limited_files, files[i])
+		end
+
+		-- Create completion items
+		for _, file in ipairs(limited_files) do
+			table.insert(items, {
+				label = file .. '/',
+				kind = require("cmp").lsp.CompletionItemKind.File,
+			})
+		end
+
+		isIncomplete = false
 	elseif input:match("^@") then
 		print("[complete] @ case")
 		items = {
 			{ label = "code", kind = require("cmp").lsp.CompletionItemKind.Keyword },
-			{ label = "file", kind = require("cmp").lsp.CompletionItemKind.Keyword },
 		}
 		isIncomplete = false
 	else
 		print("[complete] default case")
-		isIncomplete = false
+		isIncomplete = true
 	end
 
 	local data = { items = items, isIncomplete = isIncomplete }
